@@ -6,3 +6,10 @@
 - Fixed joined assistant text, subagent-text filtering, valid empty-array extraction, malformed structured-output detection, TypeScript thinking-budget translation, and failed-tool telemetry. Usage remains SDK-reported; tool tokens remain estimates.
 - Reference generation now writes separate unreviewed candidates by default and preserves the original reference bytes. Raw SARIF/file-output, stdout/stderr, rule mappings, and severity comparisons are separate artifacts. Explicit `--overwrite` retains a backup and refuses concurrent reference edits. Timeouts retain partial scanner output. URI normalization and failed/malformed SARIF handling have regression tests.
 - V1 scoring, greedy normalized-type matching, original fixtures, references, and default prompts are unchanged. See `VALIDATION.md` for actual checks and limits.
+
+## Native Windows portability
+
+- Added native Windows Snyk executable/npm-shim resolution and process-tree termination, shared by baseline scans and reference generation.
+- Added local drive/file-URI normalization, explicit UTF-8 I/O, and pre-copy junction/reparse-point rejection.
+- Preserved Linux/macOS Claude checks and added SDK `failIfUnavailable`. Native Windows now explains the official runtime's missing Bash sandbox and fails before any model call.
+- Added Windows branch tests, real Windows-only subprocess integrations, PowerShell instructions, and a cross-platform CI matrix. See `WINDOWS_COMPATIBILITY.md` for actual results and the remaining Claude limitation.

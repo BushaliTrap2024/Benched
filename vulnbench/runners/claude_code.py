@@ -23,6 +23,7 @@ def sandbox_settings(cwd: Path, reference_root: Path) -> dict:
     return {
         'sandbox': {
             'enabled': True,
+            'failIfUnavailable': True,
             'autoAllowBashIfSandboxed': True,
             'allowUnsandboxedCommands': False,
             'filesystem': {
@@ -43,6 +44,15 @@ async def check_sandbox_available() -> None:
     This checks platform prerequisites, not reference-read enforcement. The
     optional runtime containment integration test exercises that policy.
     """
+    if sys.platform == 'win32':
+        # Claude Code itself currently leaves native-Windows shell commands
+        # unsandboxed. A standalone srt Windows backend is not SDK integration.
+        raise ContainmentError(
+            'Native Windows Claude Code cannot enforce the required Bash filesystem sandbox '
+            '(claude-agent-sdk 0.2.182). No model was started. Snyk Code can run natively; '
+            'Claude evaluation requires a runtime with a supported built-in sandbox. '
+            'See https://code.claude.com/docs/en/sandboxing. '
+            'Benched will not run this benchmark unsandboxed.')
     if sys.platform == 'linux':
         missing = [name for name in ('bwrap', 'socat') if shutil.which(name) is None]
         if missing:

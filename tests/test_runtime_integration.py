@@ -11,10 +11,10 @@ from vulnbench.runners.claude_code import check_sandbox_available, ContainmentEr
 
 
 @pytest.mark.sdk_integration
-def test_real_claude_cli_initialize_without_model_prompt(tmp_path):
+def test_real_claude_cli_initializes_or_fails_closed_without_model_prompt(tmp_path, record_property):
     if os.environ.get('VULNBENCH_SDK_INTEGRATION') != '1':
         pytest.skip('Set VULNBENCH_SDK_INTEGRATION=1 for real CLI initialization; no model query')
-    from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
+    from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, ResultError
     async def guard(*args): return {}
     async def initialize():
         options=ClaudeAgentOptions(cwd=tmp_path,setting_sources=[],strict_mcp_config=True,mcp_servers={},
@@ -22,15 +22,24 @@ def test_real_claude_cli_initialize_without_model_prompt(tmp_path):
             env={'CLAUDE_CONFIG_DIR':str(tmp_path/'cli-config'),'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC':'1'},
             hooks={'PreToolUse':[HookMatcher(hooks=[guard],on_failure='block')]})
         # connect initializes only; it never sends a user prompt or query.
-        async with ClaudeSDKClient(options=options) as client:
-            info=await client.get_server_info()
-            assert info['hook_on_failure_supported'] is True
-            assert info.get('hooks_applied') is not False
+        try:
+            async with ClaudeSDKClient(options=options) as client:
+                info=await client.get_server_info()
+                assert info['hook_on_failure_supported'] is True
+                assert info.get('hooks_applied') is not False
+                record_property('real_cli_outcome', 'initialized with registered hooks')
+        except ResultError as error:
+            # With failIfUnavailable the actual CLI must refuse startup on a
+            # host with missing sandbox dependencies. This is a validated
+            # refusal, not a successful initialized/contained scan.
+            assert 'Sandbox required but unavailable' in str(error)
+            assert json.loads(options.settings)['sandbox']['failIfUnavailable'] is True
+            record_property('real_cli_outcome', 'refused startup: sandbox unavailable')
     asyncio.run(initialize())
 
 
 @pytest.mark.containment_integration
-def test_real_bash_reference_reads_denied_by_official_sandbox(tmp_path):
+def test_real_bash_reference_reads_denied_by_official_sandbox(tmp_path, make_symlink):
     srt=os.environ.get('VULNBENCH_SRT') or shutil.which('srt')
     if not srt:
         pytest.skip('Anthropic sandbox runtime srt not installed; OS containment not validated')
@@ -44,7 +53,7 @@ def test_real_bash_reference_reads_denied_by_official_sandbox(tmp_path):
     results=benchmark/'results'; results.mkdir(); (results/'previous-findings.json').write_text('REFERENCE_SECRET')
     cwd=tmp_path/'isolated/project'; cwd.mkdir(parents=True)
     (cwd/'app.js').write_text('PROJECT_SOURCE')
-    (cwd/'link').symlink_to(references,target_is_directory=True)
+    make_symlink(cwd/'link', references, target_is_directory=True)
     settings=tmp_path/'srt.json'
     # srt consumes SandboxRuntimeConfig, CLI settings wraps it in sandbox.
     policy=sandbox_settings(cwd,references)['sandbox']['filesystem']

@@ -58,8 +58,8 @@ def test_workspace(tmp_path):
         with isolated_workspace(project) as cwd: raise RuntimeError()
     assert not cwd.exists()
 
-def test_links(tmp_path):
-    (tmp_path/'leak').symlink_to('/etc/passwd')
+def test_links(tmp_path, make_symlink):
+    make_symlink(tmp_path/'leak', tmp_path/'secret.txt')
     with pytest.raises(ValueError):
         with isolated_workspace(tmp_path): pass
 

@@ -109,7 +109,7 @@ def test_concurrent_reference_edit_does_not_get_overwritten(root):
 def test_real_subprocess_timeout_retains_emitted_output(root):
     argv=[sys.executable,'-c','import sys,time; print("partial",flush=True); print("warning",file=sys.stderr,flush=True); time.sleep(10)']
     with pytest.raises(ProcessTimeoutError) as error: asyncio.run(execute(argv,root,.2))
-    assert error.value.stdout=='partial\n' and error.value.stderr=='warning\n'
+    assert error.value.stdout.splitlines()==['partial'] and error.value.stderr.splitlines()==['warning']
 
 @pytest.mark.parametrize('document',[
     {'runs':[None]},

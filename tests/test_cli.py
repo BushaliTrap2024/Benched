@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import shutil
+import pytest
 
 MAIN=Path(__file__).resolve().parents[1]/'main.py'
 
@@ -25,9 +27,16 @@ def test_reference_cli_subprocess_preserves_original(tmp_path):
     target.write_text('{"description":"curated","vulnerabilities":[]}')
     before=target.read_bytes()
     sample=(MAIN.parent/'tests/data/snyk-code-representative.sarif.json').read_text()
-    scanner=tmp_path/'snyk-mock'
-    scanner.write_text('#!'+sys.executable+'\nimport sys,pathlib\nraw='+repr(sample)+'\nfor a in sys.argv:\n if a.startswith("--json-file-output="): pathlib.Path(a.split("=",1)[1]).write_text(raw)\nprint("human summary")\nsys.exit(1)\n')
-    scanner.chmod(0o700)
+    if sys.platform=='win32':
+        if not shutil.which('node'): pytest.skip('Node required for npm-style Windows Snyk fixture')
+        scanner=tmp_path/'snyk.cmd'; scanner.write_text('@echo off\nREM Never executed by Benched\n')
+        package=tmp_path/'node_modules/snyk'; (package/'bin').mkdir(parents=True)
+        (package/'package.json').write_text(json.dumps({'name':'snyk','bin':{'snyk':'bin/snyk'}}))
+        (package/'bin/snyk').write_text('const fs=require("fs"); const raw='+json.dumps(sample)+'; for(const a of process.argv) {if(a.startsWith("--json-file-output="))fs.writeFileSync(a.split("=").slice(1).join("="),raw);} console.log("human summary"); process.exit(1);')
+    else:
+        scanner=tmp_path/'snyk-mock'
+        scanner.write_text('#!'+sys.executable+'\nimport sys,pathlib\nraw='+repr(sample)+'\nfor a in sys.argv:\n if a.startswith("--json-file-output="): pathlib.Path(a.split("=",1)[1]).write_text(raw)\nprint("human summary")\nsys.exit(1)\n')
+        scanner.chmod(0o700)
     result=json.loads(subprocess.check_output([sys.executable,str(MAIN),'--root',str(tmp_path),
         'generate-references','--fixture','demo','--snyk',str(scanner)],text=True))
     assert result['count']==5 and not result['installed']

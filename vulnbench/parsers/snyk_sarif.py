@@ -1,7 +1,7 @@
 import json,re
 from pathlib import Path
 from ..models import Finding
-RULES=json.loads(Path(__file__).with_name('rules.json').read_text())
+RULES=json.loads(Path(__file__).with_name('rules.json').read_text(encoding='utf-8'))
 def map_rule_id(rule_id):
     return next((kind for pattern,kind in RULES if re.search(pattern.replace(r'\/','/'),rule_id.lower())), 'other')
 def map_level(level): return {'error':'high','warning':'medium','note':'low'}.get(level,'medium')

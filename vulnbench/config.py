@@ -11,13 +11,13 @@ def fixture_path(root: Path, identifier: str) -> Path:
 
 def load_task(root: Path, identifier: str):
     if Path(identifier).name != identifier: raise ValueError('Invalid task ID')
-    data = json.loads((root/'evals/tasks'/f'{identifier}.json').read_text())
-    task = Task.model_validate(json.loads((root/'evals/prompts.json').read_text()) | data)
+    data = json.loads((root/'evals/tasks'/f'{identifier}.json').read_text(encoding='utf-8'))
+    task = Task.model_validate(json.loads((root/'evals/prompts.json').read_text(encoding='utf-8')) | data)
     fixture = fixture_path(root, task.fixture)
-    refs = References.model_validate_json((fixture/'findings.json').read_text()).validate_ids()
+    refs = References.model_validate_json((fixture/'findings.json').read_text(encoding='utf-8')).validate_ids()
     return task, fixture, refs
 
 def load_config(root: Path, identifier: str):
-    for config in json.loads((root/'evals/run-configs.json').read_text()):
+    for config in json.loads((root/'evals/run-configs.json').read_text(encoding='utf-8')):
         if config['id'] == identifier: return RunConfig.model_validate(config)
     raise ValueError(f'Unknown configuration: {identifier}')

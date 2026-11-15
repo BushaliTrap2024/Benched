@@ -43,9 +43,9 @@ def test_native_path_and_unsandboxed_bash_denials(setup,tool,args):
     assert denied_tool_reason(tool,args,project)
 
 
-def test_symlink_and_benign_tools(setup):
+def test_symlink_and_benign_tools(setup, make_symlink):
     project,refs,_=setup
-    (project/'link').symlink_to(refs,target_is_directory=True)
+    make_symlink(project/'link', refs, target_is_directory=True)
     assert denied_tool_reason('Read',{'file_path':'link/findings.json'},project)
     assert denied_tool_reason('Glob',{'path':'link','pattern':'*'},project)
     assert denied_tool_reason('Read',{'file_path':'app.js'},project) is None
@@ -171,9 +171,9 @@ def test_real_sdk_control_protocol_routes_hook_callbacks(setup):
     assert captured[0]['hookSpecificOutput']['permissionDecision']=='deny'
     assert output.metrics['tool_denials'][0]['tool']=='Read'
 
-def test_recursive_search_refuses_links_created_after_workspace_copy(setup):
+def test_recursive_search_refuses_links_created_after_workspace_copy(setup, make_symlink):
     project,refs,_=setup
-    (project/'leak').symlink_to(refs,target_is_directory=True)
+    make_symlink(project/'leak', refs, target_is_directory=True)
     assert denied_tool_reason('Grep',{'pattern':'SECRET'},project)
     assert denied_tool_reason('Glob',{'pattern':'**/*'},project)
 

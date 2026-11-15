@@ -2,6 +2,7 @@
 import hashlib
 import json
 import posixpath
+import re
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -14,25 +15,39 @@ from ..parsers.snyk_sarif import parse_snyk, sarif_results
 from ..runners.snyk_code import execute
 
 
-def _project_relative_path(uri: str, root: Path, project: Path, base_uri: str = '') -> str:
-    if not uri:
-        return ''
-    uri = unquote(uri).replace('\\', '/')
-    parsed = urlparse(uri)
+def _local_sarif_path(uri: str) -> str:
+    """Decode SARIF local paths, including Windows drives and file URIs."""
+    text = unquote(uri).replace('\\', '/')
+    if re.match(r'^[A-Za-z]:', text):
+        if not re.match(r'^[A-Za-z]:/', text):
+            raise ValueError('Drive-relative SARIF paths are ambiguous')
+        return text
+    parsed = urlparse(text)
     if parsed.scheme and parsed.scheme != 'file':
         raise ValueError(f'Unsupported SARIF URI scheme: {parsed.scheme}')
     if parsed.netloc and parsed.netloc != 'localhost':
-        raise ValueError('Remote file URIs are not project locations')
-    path = Path(parsed.path if parsed.scheme else uri)
+        raise ValueError('Remote/UNC SARIF URIs are not supported project locations')
+    path = parsed.path if parsed.scheme else text
+    if re.match(r'^/[A-Za-z]:/', path):
+        path = path[1:]
+    return path
+
+
+def _project_relative_path(uri: str, root: Path, project: Path, base_uri: str = '') -> str:
+    if not uri:
+        return ''
+    local = _local_sarif_path(uri)
+    path = Path(local)
+    if re.match(r'^[A-Za-z]:/', local) and not path.is_absolute():
+        raise ValueError('Windows absolute SARIF locations require a Windows project host')
     if path.is_absolute():
         return path.resolve().relative_to(project.resolve()).as_posix()
     if base_uri:
-        base = urlparse(unquote(base_uri))
-        if base.scheme not in ('', 'file') or base.netloc not in ('', 'localhost'):
-            raise ValueError('Unsupported SARIF URI base')
-        return (Path(base.path) / path).resolve().relative_to(project.resolve()).as_posix()
-    # Resolve the two documented Snyk CLI formats, preserving source order.
-    normalized = str(path)
+        base = Path(_local_sarif_path(base_uri))
+        if not base.is_absolute():
+            raise ValueError('SARIF URI base must be an absolute local path')
+        return (base / path).resolve().relative_to(project.resolve()).as_posix()
+    normalized = path.as_posix()
     prefix = project.relative_to(root).as_posix() + '/'
     if normalized.startswith(prefix):
         normalized = normalized[len(prefix):]
@@ -41,7 +56,6 @@ def _project_relative_path(uri: str, root: Path, project: Path, base_uri: str = 
     normalized = posixpath.normpath(normalized)
     if normalized == '..' or normalized.startswith('../'):
         raise ValueError('SARIF path escapes project')
-    # Resolve links in source projects too; references must name project files.
     return (project / normalized).resolve().relative_to(project.resolve()).as_posix()
 
 
@@ -82,19 +96,19 @@ async def generate(root, fixture_id, overwrite=False, executable='snyk', timeout
     except Exception as error:
         stdout, stderr = getattr(error, 'stdout', ''), getattr(error, 'stderr', '')
         execution.update(error=str(error), exit_status=getattr(error, 'exit_status', None))
-        (artifact / 'stdout.txt').write_text(stdout)
-        (artifact / 'stderr.txt').write_text(stderr)
-        (artifact / 'execution.json').write_text(json.dumps(execution, indent=2))
+        (artifact / 'stdout.txt').write_text(stdout, encoding='utf-8')
+        (artifact / 'stderr.txt').write_text(stderr, encoding='utf-8')
+        (artifact / 'execution.json').write_text(json.dumps(execution, indent=2), encoding='utf-8')
         raise RuntimeError(f'Snyk execution failed; artifacts: {artifact}: {error}') from error
-    (artifact / 'stdout.txt').write_text(stdout)
-    (artifact / 'stderr.txt').write_text(stderr)
+    (artifact / 'stdout.txt').write_text(stdout, encoding='utf-8')
+    (artifact / 'stderr.txt').write_text(stderr, encoding='utf-8')
     execution['exit_status'] = status
-    (artifact / 'execution.json').write_text(json.dumps(execution, indent=2))
+    (artifact / 'execution.json').write_text(json.dumps(execution, indent=2), encoding='utf-8')
     if not raw.exists():
-        raw.write_text(stdout)
+        raw.write_text(stdout, encoding='utf-8')
     if status not in (0, 1):
         raise RuntimeError(f'Snyk failed ({status}); artifacts: {artifact}')
-    text = raw.read_text()
+    text = raw.read_text(encoding='utf-8')
     findings = parse_snyk(text, strict=True)
     results = [r for r in sarif_results(text) if r.get('ruleId')]
     bases = json.loads(text)['runs'][0].get('originalUriBaseIds', {})
@@ -119,10 +133,10 @@ async def generate(root, fixture_id, overwrite=False, executable='snyk', timeout
                        'raw_artifact': str(raw.relative_to(root)), 'sha256': hashlib.sha256(raw.read_bytes()).hexdigest()},
     }
     candidate = artifact / 'candidate-findings.json'
-    candidate.write_text(json.dumps(data, indent=2) + '\n')
-    References.model_validate_json(candidate.read_text()).validate_ids()
-    (artifact / 'mapping.json').write_text(json.dumps(rule_metadata, indent=2))
-    (artifact / 'severity-comparison.json').write_text(json.dumps(_severity_comparison(findings, original), indent=2))
+    candidate.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    References.model_validate_json(candidate.read_text(encoding='utf-8')).validate_ids()
+    (artifact / 'mapping.json').write_text(json.dumps(rule_metadata, indent=2), encoding='utf-8')
+    (artifact / 'severity-comparison.json').write_text(json.dumps(_severity_comparison(findings, original), indent=2), encoding='utf-8')
     if overwrite:
         # Explicit opt-in only, with a byte-exact backup and a concurrent-edit check.
         if (target.read_bytes() if target.exists() else None) != original_bytes:

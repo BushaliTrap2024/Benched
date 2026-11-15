@@ -1,7 +1,7 @@
 import json, re
 from pathlib import Path
 from ..models import Finding
-ALIASES = json.loads(Path(__file__).with_name('aliases.json').read_text())
+ALIASES = json.loads(Path(__file__).with_name('aliases.json').read_text(encoding='utf-8'))
 
 def normalize_type(value): return ALIASES.get(str(value).lower().strip(), 'other')
 
