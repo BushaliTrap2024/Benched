@@ -1,5 +1,7 @@
 # Implementation review validation
 
+This records the earlier implementation review. For subsequent Windows changes and hosted cross-platform results, see [WINDOWS_COMPATIBILITY.md](WINDOWS_COMPATIBILITY.md).
+
 Validated on Python 3.12, Node 24.22.1, `claude-agent-sdk` **0.2.182**, and bundled Claude Code **2.1.325**. The SDK is now pinned in `pyproject.toml`. The optional standalone Anthropic sandbox runtime inspected was **0.0.83**; it is not a production dependency of this Python framework.
 
 ## Actual test results

@@ -69,7 +69,7 @@ Snyk `.cmd` shims are resolved to the installed npm package's declared Node entr
 
 Reference generation accepts local Windows drive paths and `file:///C:/...` SARIF URIs, normalizes candidates to POSIX project-relative paths, and rejects drive-relative/remote UNC locations. Prompts, JSONL, and scanner artifacts explicitly use UTF-8. Workspaces remain fresh `TemporaryDirectory` copies of `project/` only; symlinks and Windows junction/reparse points are rejected before copying. Windows symlink tests skip when Developer Mode/admin permission is unavailable. Node 22.18+ is needed only for TypeScript differential tests and npm-based Snyk installations; the standalone Snyk binary needs no Node installation.
 
-For actual platform test results and unverified limitations, see [WINDOWS_COMPATIBILITY.md](WINDOWS_COMPATIBILITY.md). The GitHub Actions matrix runs the no-payment suite on Windows, Linux, and macOS, including Windows-only real subprocess/shim tests. OS-level Bash reference denial is not claimed on native Windows, where the official SDK sandbox is unsupported.
+For actual platform test results and unverified limitations, see [WINDOWS_COMPATIBILITY.md](WINDOWS_COMPATIBILITY.md). The [GitHub Actions matrix](https://github.com/BushaliTrap2024/Benched/actions/runs/43678028466) passed on native Windows (**121 passed, 2 skipped**), Linux, and macOS, including Windows-only real subprocess/shim tests. Authenticated scanner calls were not run. OS-level Bash reference denial is not claimed on native Windows, where the official SDK sandbox is unsupported.
 
 ## Three workflows
 

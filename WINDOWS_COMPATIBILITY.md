@@ -48,3 +48,17 @@ Four skips require native Windows APIs (Windows argument parsing/file URIs, desc
 The explicitly enabled real CLI initialization test passed by confirming the CLI's **startup refusal** with `failIfUnavailable: true` and missing socat. This was not successful agent initialization or a scan; no model prompt was sent. Its earlier expectation of successful initialization was updated to distinguish a genuine fail-closed refusal from a supported initialized session. The optional official sandbox-runtime containment test still skips on this Linux host; an actual allowed-project / denied-reference Bash execution remains unverified here.
 
 No authenticated Claude or Snyk scan was performed during this portability work. No native Windows workstation was available locally. CI results are separate from these local results and must be read from the cross-platform workflow run.
+
+## Hosted native Windows, Linux, and macOS results
+
+[Cross-platform GitHub Actions run 43678028466](https://github.com/BushaliTrap2024/Benched/actions/runs/43678028466) completed successfully on source commit `99666513f1ec421aca79f610a2b05d74fe54e395`:
+
+| Runner | Actual result |
+|---|---|
+| `windows-latest` | **121 passed, 2 skipped in 12.60s** |
+| `ubuntu-latest` | **117 passed, 6 skipped in 3.01s** |
+| `macos-latest` | **117 passed, 6 skipped in 4.38s** |
+
+The Windows run has only the two optional runtime skips, so all four native Windows integration tests executed successfully: real Windows argument/file-URI handling, descendant process termination, npm Snyk shim execution through Node, and NTFS junction rejection. The full CLI reference-generation fixture also passed there. This establishes hosted native Windows execution of those paths in addition to local simulations; it is not a claim of an authenticated live Snyk scan or a protected Claude scan.
+
+The optional sandbox integration remains skipped, and native Windows Claude Code still has no supported built-in Bash isolation for this benchmark. No model API calls were part of any CI job. The documentation-only commit recording these results does not change the tested source.
