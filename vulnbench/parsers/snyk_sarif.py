@@ -9,8 +9,12 @@ def sarif_results(text):
     data=json.loads(text)
     if not isinstance(data,dict) or not isinstance(data.get('runs'),list) or not data['runs']:
         raise ValueError('Not a SARIF document with runs[0]')
-    results=data['runs'][0].get('results',[])
-    if not isinstance(results,list): raise ValueError('Invalid SARIF results')
+    run=data['runs'][0]
+    if not isinstance(run,dict): raise ValueError('Invalid SARIF run')
+    if any(i.get('executionSuccessful') is False for i in run.get('invocations',[]) if isinstance(i,dict)):
+        raise ValueError('SARIF invocation reports an unsuccessful scan')
+    results=run.get('results',[])
+    if not isinstance(results,list) or any(not isinstance(r,dict) for r in results): raise ValueError('Invalid SARIF results')
     return results
 
 def parse_snyk(text, strict=False):

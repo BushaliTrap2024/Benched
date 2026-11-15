@@ -73,21 +73,26 @@ def test_references(root):
     async def fake(*args): return SARIF,'warning',1
     with patch('vulnbench.references.generate.execute',fake):
         result=asyncio.run(generate(root,'demo'))
-        target=root/'fixtures/demo/findings.json'; old=target.read_bytes()
-        data=json.loads(old); assert data['provenance']['review_status']=='unreviewed'
+        candidate=Path(result['candidate'])
+        data=json.loads(candidate.read_text()); assert data['provenance']['review_status']=='unreviewed'
         assert len({v['id'] for v in data['vulnerabilities']})==2
-        with pytest.raises(FileExistsError): asyncio.run(generate(root,'demo'))
+        target=root/'fixtures/demo/findings.json'
+        assert not target.exists()  # Generating candidates never installs by default.
+        target.write_text('{"description":"curated","vulnerabilities":[]}')
+        old=target.read_bytes()
+        generated=asyncio.run(generate(root,'demo'))
+        assert target.read_bytes()==old
         second=asyncio.run(generate(root,'demo',True))
         assert (Path(second['artifacts'])/'previous-findings.json').read_bytes()==old
         assert json.loads(target.read_text())['vulnerabilities']==data['vulnerabilities']
         assert Path(result['artifacts'],'scan.sarif.json').read_text()==SARIF
 
 def test_reference_failure_preserves_existing(root):
-    target=root/'fixtures/demo/findings.json'; target.write_text('original')
+    target=root/'fixtures/demo/findings.json'; target.write_text('{"description":"original","vulnerabilities":[]}')
     async def fake(*args): return '{"error":"authentication"}','bad auth',2
     with patch('vulnbench.references.generate.execute',fake):
         with pytest.raises(RuntimeError): asyncio.run(generate(root,'demo',True))
-    assert target.read_text()=='original'
+    assert json.loads(target.read_text())['description']=='original'
 
 def test_baseline_process_and_no_overwrite(root):
     target=root/'fixtures/demo/findings.json'; target.write_text('original')
@@ -139,12 +144,16 @@ def test_claude_sdk_mock(root):
     from vulnbench.runners.claude_code import ClaudeCodeRunner
     from vulnbench.models import Task
     task=Task(id='demo',name='demo',fixture='demo',category='find-vulns',systemPrompt='system',prompt='prompt')
-    with patch.object(sdk,'query',fake):
+    async def sandbox_available(): pass
+    with patch.object(sdk,'query',fake), patch('vulnbench.runners.claude_code.check_sandbox_available',sandbox_available):
         output=asyncio.run(ClaudeCodeRunner().run(task,RunConfig(id='demo',model='claude-opus-4-6'),root/'fixtures/demo/project'))
     assert not output.failure and output.findings[0].type=='xss'
     assert output.metrics['usage']['input_tokens']==10 and output.metrics['totalTurns']==2
     options=observed['options']; assert options.strict_mcp_config and options.setting_sources==[]
-    assert options.sandbox['enabled'] and not options.sandbox['allowUnsandboxedCommands']
+    assert options.sandbox is None
+    sandbox=json.loads(options.settings)['sandbox']
+    assert sandbox['enabled'] and not sandbox['allowUnsandboxedCommands']
+    assert sandbox['filesystem']['denyRead']
 
 def test_differential_original_typescript():
     import subprocess,random

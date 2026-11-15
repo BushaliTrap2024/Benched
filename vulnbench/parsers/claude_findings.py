@@ -5,13 +5,22 @@ ALIASES = json.loads(Path(__file__).with_name('aliases.json').read_text())
 
 def normalize_type(value): return ALIASES.get(str(value).lower().strip(), 'other')
 
+def extract_findings_payload(value):
+    """Extract the V1 marker/fallback payload, distinguishing [] from failure."""
+    if not isinstance(value, str):
+        return value
+    match = re.search(r'FINDINGS_JSON:\s*```(?:json)?\s*([\s\S]*?)```',value,re.I)
+    fallback = re.search(r'\[[\s\S]*?\]',value) if not match else None
+    if not match and not fallback:
+        raise ValueError('Missing FINDINGS_JSON or JSON array')
+    return json.loads(match[1] if match else fallback[0])
+
+
 def parse_findings(value):
-    if isinstance(value, str):
-        match = re.search(r'FINDINGS_JSON:\s*```(?:json)?\s*([\s\S]*?)```',value,re.I)
-        fallback = re.search(r'\[[\s\S]*?\]',value) if not match else None
-        if not match and not fallback: return []
-        try: value = json.loads(match[1] if match else fallback[0])
-        except (ValueError,TypeError): return []
+    try:
+        value = extract_findings_payload(value)
+    except (ValueError, TypeError):
+        return []
     if not isinstance(value,list): return []
     result=[]
     for item in value:

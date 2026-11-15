@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [{
+    "tool": {"driver": {"name": "Snyk Code", "rules": [
+      {"id": "javascript/CommandInjection", "shortDescription": {"text": "Command Injection"}, "properties": {"cwe": ["CWE-78"]}},
+      {"id": "javascript/DOMXSS", "shortDescription": {"text": "Cross-site Scripting (XSS)"}, "properties": {"cwe": ["CWE-79"]}},
+      {"id": "javascript/NewUnmappedRule", "shortDescription": {"text": "Unmapped rule for regression"}}
+    ]}},
+    "results": [
+      {"ruleId": "javascript/CommandInjection", "ruleIndex": 0, "level": "error", "message": {"text": "Unsanitized HTTP input reaches child_process.exec."}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app.js"}, "region": {"startLine": 45}}}]},
+      {"ruleId": "javascript/CommandInjection", "ruleIndex": 0, "level": "error", "message": {"text": "Duplicate scanner occurrence at the same location."}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app.js"}, "region": {"startLine": 45}}}]},
+      {"ruleId": "javascript/DOMXSS", "ruleIndex": 1, "level": "warning", "message": {"text": "HTTP input reaches an HTML sink."}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src%2Fview.js"}, "region": {"startLine": 12}}}]},
+      {"ruleId": "javascript/NewUnmappedRule", "level": "note", "message": {"text": "Unknown rules remain other."}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": "config.js"}, "region": {"startLine": 4}}}]},
+      {"ruleId": "javascript/Ssrf", "message": {"text": "Missing optional level and location."}},
+      {"message": {"text": "No rule ID: skipped by V1 parser."}}
+    ]
+  }, {"results": [{"ruleId": "javascript/Sqli", "level": "error"}]}]
+}

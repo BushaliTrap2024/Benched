@@ -22,10 +22,10 @@ Claude uses the **official `claude-agent-sdk` Python package**, including its Cl
 ## Three workflows
 
 ```bash
-# Existing references are protected: this command refuses if findings.json exists.
+# Generate candidates separately; the original findings.json is preserved.
 python main.py generate-references --fixture js-project-tigerteam
 
-# Explicit regeneration, preserving the prior reference in the scan artifacts:
+# Explicitly install generated candidates, preserving the original in artifacts:
 python main.py generate-references --fixture js-project-tigerteam --overwrite
 
 python main.py run --task js-project-tigerteam-find-vulns \
@@ -35,13 +35,20 @@ python main.py run --task js-project-tigerteam-find-vulns \
   --config snyk-code --repetitions 5
 ```
 
-The bundled tigerteam fixture already has upstream references, so generation requires `--overwrite`. This is intentional protection. For new fixtures, create `fixtures/NAME/project/` and invoke generation without overwrite. Raw SARIF, full stdout/stderr, invocation, exit status, generated candidates, and prior reference backups live under `results/references/`. SARIF rule IDs are available in the raw artifact, and normalized candidates retain type, location, severity, description, and stable IDs derived from fixture/rule/path/line plus duplicate occurrence. Result order is retained. `--include-ignores` explicitly broadens the scan. References include unreviewed provenance and an artifact hash; review them before treating them as curated. This command is new Python automation of upstream fixture-authoring Steps 2–4, not an existing upstream one-command feature.
+The bundled tigerteam fixture already has upstream references. By default generation preserves those bytes and writes **only** `results/references/ID/candidate-findings.json`; it does not install a new scoring reference, even for a new fixture. Review candidates before selecting them. `--overwrite` explicitly installs the unreviewed candidates as `fixtures/NAME/findings.json`, preserves a byte-exact `previous-findings.json` backup, and refuses to overwrite concurrent reviewer edits.
+
+Each generation bundle retains `scan.sarif.json`, full `stdout.txt`/`stderr.txt`, `execution.json`, `candidate-findings.json`, `mapping.json` (rule IDs/levels), and `severity-comparison.json`. CLI `--json-file-output` is authoritative when present; raw stdout is retained separately even when it is a human summary. Failed and timed-out invocations retain available raw/partial output and leave references unchanged. The checked-in representative SARIF is explicitly synthetic test data, not a claimed live scan.
+
+Automatic severity follows upstream `mapLevel`: **error → high, warning → medium, note → low, missing/other → medium**. It never produces `critical`. Curated references may assign different severities: tigerteam's command-injection reference is `critical`, whereas a SARIF `error` maps to `high`. The comparison artifact reports exact type/file/line pairs solely for review; that diagnostic never changes V1 scoring or copies curated severities into candidates. Unknown rule IDs remain `other` and require review. IDs are stable from fixture/rule/normalized-path/line plus duplicate occurrence, and source order is retained. Supported locations include project-relative paths, repo-relative fixture paths, absolute/file URIs, and absolute `originalUriBaseIds` entries. Escaping locations and unknown URI bases fail explicitly.
+
+`--include-ignores` explicitly broadens the scan. This command is new Python automation of upstream fixture-authoring Steps 2–4, not an existing upstream one-command feature.
 
 Repeat `--task` and `--config` for a Cartesian experiment. Each repetition starts a fresh runner session and a fresh project copy. Repetitions and agent turns are independent. `--dry-run` validates selection and prints resolved prompts/configuration without invoking detectors. `--output PATH` selects the JSONL destination; otherwise a unique experiment file is created. Nonzero process status reports failed runs; failures remain in JSONL and are excluded from averages.
 
 ```bash
 python main.py run --task js-project-tigerteam-find-vulns --config claude-opus-4-6-medium --repetitions 5 --dry-run
-python main.py aggregate results/experiment-ID.jsonl
+python main.py aggregate results/experiment-ID.jsonl --level all
+python main.py aggregate results/experiment-ID.jsonl --level config
 python main.py repeatability results/experiment-ID.jsonl
 ```
 
@@ -55,15 +62,25 @@ Each JSONL record includes task/fixture/config IDs, complete resolved task and c
 
 V1 scoring normalizes reported categories and greedily consumes the first unmatched reference of the same type, preserving both orders. File and line never participate. Duplicate reports are retained, and excess reports become false positives. With no reports precision is 0; with no references overall recall is 1; F1 is 0 if precision plus recall is 0. A zero-reference breakdown has recall 0, as upstream does.
 
-Repeatability is separate: reference-matched recurrence uses reference IDs; unmatched recurrence uses normalized type + POSIX file + exact line within task/config. Duplicate occurrences count once per execution. Output retains unique signatures, frequency histograms, and once/several/all counts. `seen_all` means all **successful observed executions**; requested repetitions and successful count are both reported. Analyze one experiment JSONL at a time. Aggregation reports per-task/config mean precision/recall/F1, sample F1 standard deviation, duration, and success/failure counts.
+Repeatability is separate from scoring. Both `reference_matched` and `unmatched` now use **task + config + normalized reported type + basename(file) + reported line**, retaining the original finding, repetition, finding index, and matched reference ID for each occurrence. `all_findings` deduplicates across the two outcomes. A duplicate signature counts once per repetition while all occurrences remain available. `--signature-path relative-path` selects a full normalized path instead of basename; this explicitly changes the paper's path normalization. Equal basenames in different directories therefore merge in default paper mode but remain distinguishable in original occurrence metadata or full-path mode.
+
+The paper's chart handoff separately defines true-positive recurrence using **task + config + reference ID**. That published view is retained as `reference_coverage`; it is not mislabeled as location-sensitive model repeatability. On the published 250 model executions, unmatched recurrence is 161 unique / 80 once / 22 all-five; reference coverage is 158 unique / 134 all-five. Location-sensitive matched signatures are 187 unique / 120 all-five. These are distinct questions, not interchangeable counts. See the [paper](https://arxiv.org/abs/2606.15762v1), [chart methodology](https://github.com/snyk-labs/snyk-vulnbench/blob/385a3751046b62f30b61f9dfadb26d6d7dfc52aa/public/2026-05-28-llm-repeatability/article-visuals.md), and regression tests.
+
+`seen_all` uses **requested** repetitions, so failures/missing runs do not imply perfect planned repeatability. Outputs include successful count and `complete`. Analyze one experiment at a time; duplicate successful task/config/repetition keys are rejected.
+
+Aggregation defaults to `{tasks: [...], configurations: [...]}`; use `--level task` for the previous task-row-only CLI shape or `--level config` for model configuration headlines. The Python `aggregate(records)` function retains its original task-row API; `aggregate_by_config(records)` adds configuration rows. Repetitions are averaged within each task, then task means receive equal weight (macro averages), regardless of finding counts or unequal repetition counts. Headline sample standard deviation is calculated over each repetition's mean across tasks, as in `src/aggregator.ts`, not over all pooled runs or per-task deviations. Configurations with different effort/tools remain separate even when sharing a model name. Failures are excluded and reported explicitly; incomplete matrices show task counts, expected runs, and per-repetition coverage. Entirely absent tasks cannot be inferred from a JSONL file: `complete` applies only to task IDs present in that input. Token/cost averages are nullable when unavailable.
 
 SDK usage is saved as reported, including cache counters when present; cost and turns come from the SDK terminal result. Tool hooks record wall time and character-count/4 estimates separately from SDK token usage. Files accessed records only observable native filesystem tools. Bash file reads cannot be enumerated reliably. Snyk metrics retain stdout, stderr, status, duration, finding count, and files **referenced by findings**, not an assertion that these were its only scanned files. Valid Snyk vulnerability exit status 1 is accepted; malformed SARIF and operational statuses 2/3 fail rather than receive misleading zero scores.
 
 ## Isolation and differences
 
-Only `project/` is copied into a unique temporary directory; fixture metadata and references are excluded. Workspaces are cleaned on success and exceptions. Symlinks are rejected to avoid copying external targets. The Claude runner disables user/project settings and unrelated MCP servers, restricts native file-tool paths with a hook, enables the CLI sandbox, forbids unsandboxed Bash fallbacks, and sends reference-directory read denial plus project read/write allowances through Claude Code settings. The Python SDK's typed SandboxSettings lacks the TypeScript filesystem field, so filesystem settings use the documented CLI settings interface. This relies on the installed CLI enforcing its sandbox; mocked tests do not establish operating-system containment. It is not a container or a defense against a hostile sandbox escape. For stronger isolation, run the detector in a dedicated container with only the project mounted and keep results/references on the host. SDK/runtime sandbox setup failures are recorded as failures; the runner does not retry unsandboxed.
+Only `project/` is copied into a unique temporary directory; fixture metadata and references are excluded. Workspaces are cleaned on success and exceptions, and source symlinks are rejected. Native filesystem hooks reject outside paths (including escaping Glob patterns and symlinks created during a run). PreToolUse hooks use SDK `on_failure="block"`; unsupported hook enforcement fails the SDK initialization. Tools are limited to Read/Glob/Grep/Bash/Write/Edit. Requests to disable Bash sandboxing are denied.
 
-The original JavaScript fixtures remain JavaScript. Fixing workflows, V2 scoring, model gateways, MCP prompt variants, and unrelated runners are intentionally outside this V1 port. Parser fallback follows V1 behavior, including its simple first-array regex. Invalid scanner output is handled more strictly than the permissive upstream parser. Partial tool calls without a post hook have no fabricated duration; interrupted SDK sessions may have no terminal usage. Dependency ranges should be locked for published experiments; record runtime versions alongside artifacts when comparing environments.
+The complete sandbox policy goes through **one `settings` JSON object**. In tested SDK **0.2.182**, separately supplying `sandbox=` replaces `settings["sandbox"]` and loses filesystem rules; a transport regression test guards against that bug. The policy enables sandboxing, forbids unsandboxed Bash fallback, denies reads of the benchmark tree (including fixtures/results) and the temporary parent, re-allows the isolated project for reading, allows project writes, and denies reference writes. Linux preflight requires bubblewrap/socat and a functioning namespace probe before any model call. User/project settings and unrelated MCP servers are disabled. The preflight is a prerequisite check, not proof of reference-read enforcement.
+
+**Containment validation limitation:** this managed host lacks socat, and a direct bubblewrap probe cannot create its user namespace. The runner therefore fails closed. Native hook denials, SDK policy serialization, and real CLI hook-registration initialization were checked; actual OS-enforced Bash reference denial could not run here. The optional official sandbox-runtime integration first verifies an allowed project read, then attempts absolute-reference, symlink, saved-reference-artifact, and parent-reference reads. It skips with a reason when the sandbox cannot start and never retries unsandboxed. No claim of end-to-end Bash containment is made from a mock or a failed startup. See `VALIDATION.md`.
+
+The original JavaScript fixtures remain JavaScript. Fixing workflows, V2 scoring, model gateways, MCP prompt variants, and unrelated runners are intentionally outside this V1 port. Parser fallback follows V1 behavior, including its simple first-array regex. Invalid scanner output is handled more strictly than the permissive upstream parser. Partial tool calls without a post hook have no fabricated duration; interrupted SDK sessions may have no terminal usage. The Python SDK is pinned to the validated release; other dependency versions should also be locked for published experiments; record runtime versions alongside artifacts when comparing environments.
 
 ## Source mapping and verification
 
@@ -81,4 +98,18 @@ The original JavaScript fixtures remain JavaScript. Fixing workflows, V2 scoring
 | `src/aggregator.ts` | `vulnbench/aggregation.py` (V1 subset) |
 | JS 1.0 paper signature methodology | `vulnbench/repeatability.py` |
 
-Tests cover mappings, SARIF, malformed output, fenced findings, duplicates, greedy matching, empty denominators, workspace cleanup/isolation, repetitions, CLI subprocess status/timeouts, reference generation/backups, baseline immutability, SDK option/usage handling, and repeatability. A retained subset of the pinned original TypeScript scorer serves as a differential oracle over generated cases; that test requires Node 22.18+ with TypeScript stripping (validated on Node 24). Node is not required to run the Python framework. Live authenticated scans and paid model calls are not part of automated tests.
+Tests cover published-data headline/signature reproduction, mappings, SARIF, malformed output, fenced findings, duplicates, greedy matching, empty denominators, workspace cleanup/isolation, repetitions, CLI subprocess status/timeouts, reference generation/backups, baseline immutability, SDK option/usage handling, and repeatability. A retained subset of the pinned original TypeScript scorer serves as a differential oracle over generated cases; that test requires Node 22.18+ with TypeScript stripping (validated on Node 24). Node is not required to run the Python framework. Live authenticated scans and paid model calls are not part of automated tests.
+
+
+## Optional no-payment integrations
+
+```bash
+# Initialize the actual bundled Claude CLI and register hooks; sends no model prompt.
+VULNBENCH_SDK_INTEGRATION=1 pytest -q -m sdk_integration
+
+# Needs the official srt executable, bubblewrap/socat on Linux, and permitted namespaces.
+# Install @anthropic-ai/sandbox-runtime separately; it is a test dependency only.
+VULNBENCH_SRT=/path/to/srt pytest -q -m containment_integration -rs
+```
+
+Regular tests never make paid model calls. The real-SDK protocol test uses a deterministic in-memory CLI peer, explicitly not a real detector scan or proof of OS isolation. Real model/scanner scans require valid authentication and a working sandbox; no unauthenticated or unsandboxed scan is counted as successful. Actual test outcomes and live-validation status are recorded in `VALIDATION.md`.
