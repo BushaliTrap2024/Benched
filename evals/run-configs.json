@@ -1,0 +1,57 @@
+[
+  {
+    "id": "opus-4-6-high",
+    "name": "Claude Opus 4.6 High",
+    "model": "claude-opus-4-6",
+    "effort": "high",
+    "maxTurns": 30
+  },
+  {
+    "id": "sonnet-4-6-high",
+    "name": "Claude Sonnet 4.6 High",
+    "model": "claude-sonnet-4-6",
+    "effort": "high",
+    "maxTurns": 30
+  },
+  {
+    "id": "opus-4-6-medium",
+    "name": "Claude Opus 4.6 Medium",
+    "model": "claude-opus-4-6",
+    "effort": "medium",
+    "maxTurns": 30
+  },
+  {
+    "id": "sonnet-4-6-medium",
+    "name": "Claude Sonnet 4.6 Medium",
+    "model": "claude-sonnet-4-6",
+    "effort": "medium",
+    "maxTurns": 30
+  },
+  {
+    "id": "opus-4-7-max",
+    "name": "Claude Opus 4.7 Max",
+    "model": "claude-opus-4-7",
+    "effort": "max",
+    "maxTurns": 30
+  },
+  {
+    "type": "command",
+    "id": "snyk-code",
+    "name": "Snyk Code SAST",
+    "executable": "snyk",
+    "args": [
+      "code",
+      "test",
+      "{fixturePath}",
+      "--json"
+    ],
+    "parser": "snyk-code"
+  },
+  {
+    "id": "claude-opus-4-6-medium",
+    "name": "Claude Opus 4.6 Medium",
+    "model": "claude-opus-4-6",
+    "effort": "medium",
+    "maxTurns": 30
+  }
+]
