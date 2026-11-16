@@ -59,7 +59,13 @@ def test_real_bash_reference_reads_denied_by_official_sandbox(tmp_path, make_sym
     policy=sandbox_settings(cwd,references)['sandbox']['filesystem']
     settings.write_text(json.dumps({'filesystem':policy,'network':{'allowedDomains':[],'deniedDomains':[]}}))
     def run(command):
-        return subprocess.run([srt,'--settings',str(settings),command],cwd=cwd,capture_output=True,text=True,timeout=30)
+        return subprocess.run(
+            [srt, '--settings', str(settings), '--', 'bash', '-lc', command],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+       )
     readable=run('cat app.js')
     assert readable.returncode==0, readable.stderr  # no false positive from a failed sandbox startup
     assert readable.stdout.strip()=='PROJECT_SOURCE'
