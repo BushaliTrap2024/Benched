@@ -20,6 +20,13 @@ def _successful(record):
     return not record.get('failure') and not record.get('error') and record.get('score') is not None
 
 
+def _f1(record):
+    # Legacy failures retain score=None on disk; only recorded failures are zero.
+    if record.get('failure') or record.get('error'):
+        return 0
+    return record['score']['f1'] if record.get('score') is not None else None
+
+
 def _tokens(record):
     metrics = record['metrics']
     usage = metrics.get('usage')
@@ -32,15 +39,15 @@ def _tokens(record):
 
 
 def aggregate(records):
-    """Backward-compatible per-(task, config) rows; failed attempts excluded."""
+    """Per-(task, config) means including recorded failures as zero F1."""
     groups = defaultdict(list)
     for record in records:
         groups[record['task_id'], record['config_id']].append(record)
     result = []
     for (task, config), rows in groups.items():
         good = [r for r in rows if _successful(r)]
-        scores = [r['score']['f1'] for r in good]
-        durations = [r['metrics']['sessionDurationMs'] for r in good]
+        scores = [_f1(r) for r in rows if _f1(r) is not None]
+        durations = [r['metrics']['sessionDurationMs'] for r in rows]
         result.append(dict(
             task_id=task, config_id=config, model=rows[0].get('configuration', {}).get('model'),
             attempts=len(rows), successful=len(good), failures=len(rows)-len(good),
@@ -48,8 +55,8 @@ def aggregate(records):
             precision=_mean(r['score']['precision'] for r in good),
             recall=_mean(r['score']['recall'] for r in good),
             duration_ms=_mean(durations), duration_stddev_ms=_std(durations),
-            total_tokens=_mean(_tokens(r) for r in good),
-            cost_usd=_mean(r['metrics'].get('totalCostUsd') for r in good),
+            total_tokens=_mean(_tokens(r) for r in rows),
+            cost_usd=_mean(r['metrics'].get('totalCostUsd') for r in rows),
         ))
     return result
 
@@ -57,8 +64,9 @@ def aggregate(records):
 def aggregate_by_config(records):
     """One equal-task-weight headline per configuration (model + effort/tools).
 
-    Missing/failed runs are excluded, never silently scored as zero. Coverage
-    and per-repetition task counts expose incomplete benchmark matrices.
+    Recorded failures contribute zero F1 and their observed resource metrics.
+    Missing repetitions are not imputed. Precision/recall use successes only;
+    completeness continues to describe successful execution coverage.
     """
     task_groups = defaultdict(list)
     raw_groups = defaultdict(list)
@@ -78,10 +86,12 @@ def aggregate_by_config(records):
             if key in seen:
                 raise ValueError(f'Duplicate successful task/repetition for {config}; analyze one experiment at a time')
             seen.add(key)
-            by_rep[row['repetition']].append(row)
+        for row in raw:
+            if _f1(row) is not None:
+                by_rep[row['repetition']].append(row)
         headlines = [dict(
             repetition=rep, task_count=len(rows),
-            f1=mean(r['score']['f1'] for r in rows),
+            f1=mean(_f1(r) for r in rows),
             duration_ms=mean(r['metrics']['sessionDurationMs'] for r in rows),
         ) for rep, rows in sorted(by_rep.items())]
         requested_by_task = {t['task_id']: max(r['total_repetitions'] for r in raw if r['task_id'] == t['task_id']) for t in tasks}
@@ -92,14 +102,14 @@ def aggregate_by_config(records):
             expected_runs=sum(requested_by_task.values()),
             complete=all((task, rep) in seen for task, count in requested_by_task.items() for rep in range(1, count+1)),
             repetitions=len(by_rep),
-            f1=_mean(t['f1'] for t in usable),
+            f1=_mean(t['f1'] for t in tasks),
             precision=_mean(t['precision'] for t in usable),
             recall=_mean(t['recall'] for t in usable),
             f1_stddev=_std([r['f1'] for r in headlines]),
-            duration_ms=_mean(t['duration_ms'] for t in usable),
+            duration_ms=_mean(t['duration_ms'] for t in tasks),
             duration_stddev_ms=_std([r['duration_ms'] for r in headlines]),
-            total_tokens=_mean(t['total_tokens'] for t in usable),
-            cost_usd=_mean(t['cost_usd'] for t in usable),
+            total_tokens=_mean(t['total_tokens'] for t in tasks),
+            cost_usd=_mean(t['cost_usd'] for t in tasks),
             repetition_headlines=headlines,
         ))
     return result

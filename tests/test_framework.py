@@ -171,3 +171,22 @@ def test_differential_original_typescript():
         for key in ('truePositives','falseNegatives'):
             assert [{k:v[k] for k in ('id','type','severity')} for v in actual[key]]==expected[key]
         assert actual['FP']==len(expected['falsePositives'])
+
+
+@pytest.mark.parametrize('failure,error', [('timeout', 'timed out'), (None, 'runner error')])
+def test_experiment_preserves_failure_without_scoring_partial_findings(tmp_path, failure, error):
+    class FailedRunner:
+        async def run(self, task, config, cwd):
+            return RunOutput(findings=[Finding(type='xss')], failure=failure,
+                             error=error, metrics={'sessionDurationMs': 123})
+
+    path = tmp_path / 'failed.jsonl'
+    records = asyncio.run(run(ROOT, ['js-project-tigerteam-find-vulns'],
+                              ['claude-opus-4-6-medium'], 1, path,
+                              lambda _: FailedRunner()))
+    record = records[0]
+    assert record['score'] is None
+    assert record['failure'] == failure and record['error'] == error
+    assert json.loads(path.read_text()) == record
+    assert aggregate(records)[0]['f1'] == 0
+    assert analyze(records)[0]['all_findings']['unique'] == 0
