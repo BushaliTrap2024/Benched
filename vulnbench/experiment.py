@@ -21,6 +21,6 @@ async def run(root,tasks,configs,repetitions,path,runner_factory=None):
                 record=dict(task_id=task.id,fixture_id=task.fixture,config_id=config.id,configuration=config.model_dump(),
                     task=task.model_dump(),reference_sha256=hashlib.sha256((fixture/'findings.json').read_bytes()).hexdigest(),
                     repetition=repetition,total_repetitions=repetitions,timestamp=datetime.now(timezone.utc).isoformat(),
-                    **output.model_dump(),score=None if output.failure else score(output.findings,refs.vulnerabilities))
+                    **output.model_dump(),score=None if output.failure or output.error else score(output.findings,refs.vulnerabilities))
                 append_record(path,record); records.append(record)
     return records
