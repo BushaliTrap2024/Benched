@@ -8,7 +8,7 @@ Ironclad app and inspect the source tree selected by `IRONCLAD_APP_DIR`.
 Install the test and app dependencies.
 
 ```sh
-npm ci --prefix tests/js-project-ironclad
+npm ci --prefix fixture-tests/js-project-ironclad
 pnpm --dir fixtures/js-project-ironclad/project install --frozen-lockfile
 ```
 
@@ -38,7 +38,7 @@ node fixtures/js-project-ironclad/project/app.js
 ```
 
 ```sh
-node --test tests/js-project-ironclad/users.test.cjs
+node --test fixture-tests/js-project-ironclad/users.test.cjs
 ```
 
 Stop the app and run `docker stop ironclad-test-db` when finished.
@@ -52,7 +52,7 @@ both `IRONCLAD_APP_DIR` and `APP_URL` for that copy.
 ```sh
 IRONCLAD_APP_DIR=fixtures/js-project-ironclad/variants/variant-01/project \
 APP_URL=http://127.0.0.1:3001 \
-node --test tests/js-project-ironclad/users.test.cjs
+node --test fixture-tests/js-project-ironclad/users.test.cjs
 ```
 
 The source checks cover Ironclad's fixture structure. An inconclusive result
