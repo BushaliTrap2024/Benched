@@ -124,6 +124,74 @@ Aggregation defaults to `{tasks: [...], configurations: [...]}`; use `--level ta
 
 SDK usage is saved as reported, including cache counters when present; cost and turns come from the SDK terminal result. Tool hooks record wall time and character-count/4 estimates separately from SDK token usage. Files accessed records only observable native filesystem tools. Bash file reads cannot be enumerated reliably. Snyk metrics retain stdout, stderr, status, duration, finding count, and files **referenced by findings**, not an assertion that these were its only scanned files. Valid Snyk vulnerability exit status 1 is accepted; malformed SARIF and operational statuses 2/3 fail rather than receive misleading zero scores.
 
+## Objective B: transformed fixtures
+
+Run these commands from the repository root. Select one detector configuration
+at a time and use separate JSONL files for the original and transformed runs.
+Omitting `--variant` and `--all-variants` keeps Objective A's original fixture
+selection. To preview any run without calling a detector, add `--dry-run`.
+
+```bash
+mkdir -p results/objective-b
+
+# Original baseline for one fixture.
+python main.py run --task js-project-ironclad-find-vulns \
+  --config opus-4-6-high --repetitions 5 \
+  --output results/objective-b/ironclad-opus-high-original.jsonl
+
+# One committed variant of the same fixture.
+python main.py run --task js-project-ironclad-find-vulns --variant e0fed1bfaf53 \
+  --config opus-4-6-high --repetitions 5 \
+  --output results/objective-b/ironclad-opus-high-e0fed1bfaf53.jsonl
+
+# Every variant with a benchmark task, sequentially in fixture and variant order.
+python main.py run --all-variants --config opus-4-6-high --repetitions 5 \
+  --output results/objective-b/opus-high-variants.jsonl
+```
+
+`--all-variants` takes the directories under `transformed-variants/` as
+provided, including unchanged controls. It cannot be combined with
+`--task` or `--variant`. Single-variant selection uses the fixture ID from
+each selected task. Every variant runs through the existing isolated workspace
+pipeline and is scored using the original fixture's `findings.json`. Stored
+records include `source`, `fixture_id`, `variant_id`, the original reference
+hash and IDs, and the existing execution and scoring details. Older records
+without `variant_id` are interpreted as originals.
+
+Variant runs reject repetition IDs that already exist in the output.
+Use a fresh output file to rerun a completed or partially completed selection.
+Non-overlapping variant runs can append to a variant-only file. Originals and
+variants use separate output files. Benched serializes writers to a given
+output with a sibling `.lock` file. If a killed process leaves a stale lock,
+verify no run is using that output before deleting the lock.
+
+### Analyze Objective B
+
+```bash
+python main.py aggregate results/objective-b/opus-high-variants.jsonl --level task
+python main.py repeatability results/objective-b/opus-high-variants.jsonl
+python main.py robustness results/objective-b/ironclad-opus-high-original.jsonl \
+  results/objective-b/opus-high-variants.jsonl
+```
+
+Task aggregation reports means, standard deviations, and execution counts for
+each task, variant, and configuration. Repeatability groups each variant's
+repetitions independently and reports matched and unmatched finding signatures
+and reference coverage. Location-sensitive signatures and stable reference IDs
+retain their existing meanings.
+
+Robustness reports variant mean F1 minus original mean F1 for the same task
+and configuration. Precision and recall use successful runs. Recorded failures
+contribute zero F1, consistent with Objective A. Each reference ID reports
+detected, successful, and attempted run counts. A missing original produces
+a null delta and original frequency. Pass the matching archived Objective A
+baseline files to compare the full set of fixtures. The comparison rejects
+duplicate repetitions and differing recorded reference hashes. Configuration
+summaries average variants within each fixture, then give each fixture equal
+weight. The number of comparable fixtures indicates how much of a delta
+summary has a matching original. These results measure detection agreement with
+the curated references.
+
 ## Isolation and differences
 
 Only `project/` is copied into a unique temporary directory; fixture metadata and references are excluded. Workspaces are cleaned on success and exceptions, and source symlinks are rejected. Native filesystem hooks reject outside paths (including escaping Glob patterns and symlinks created during a run). PreToolUse hooks use SDK `on_failure="block"`; unsupported hook enforcement fails the SDK initialization. Tools are limited to Read/Glob/Grep/Bash/Write/Edit. Requests to disable Bash sandboxing are denied.

@@ -6,6 +6,8 @@ not on all individual scans pooled together (src/aggregator.ts).
 from collections import defaultdict
 from statistics import mean, stdev
 
+from .storage import instance_key, reject_duplicates, source_identity
+
 
 def _mean(values):
     values = [v for v in values if v is not None]
@@ -39,17 +41,26 @@ def _tokens(record):
 
 
 def aggregate(records):
-    """Per-(task, config) means including recorded failures as zero F1."""
+    """Per-instance means including recorded failures as zero F1."""
+    records = list(records)
+    if any(r.get('variant_id') is not None for r in records):
+        reject_duplicates(records)
     groups = defaultdict(list)
     for record in records:
-        groups[record['task_id'], record['config_id']].append(record)
+        groups[instance_key(record)].append(record)
     result = []
-    for (task, config), rows in groups.items():
+    for (task, variant, config), rows in groups.items():
         good = [r for r in rows if _successful(r)]
         scores = [_f1(r) for r in rows if _f1(r) is not None]
         durations = [r['metrics']['sessionDurationMs'] for r in rows]
+        identity = dict(fixture_id=rows[0].get('fixture_id'), **source_identity(variant)) if variant is not None else {}
+        if variant is not None:
+            identity.update(
+                precision_stddev=_std([row['score']['precision'] for row in good]),
+                recall_stddev=_std([row['score']['recall'] for row in good]),
+            )
         result.append(dict(
-            task_id=task, config_id=config, model=rows[0].get('configuration', {}).get('model'),
+            **identity, task_id=task, config_id=config, model=rows[0].get('configuration', {}).get('model'),
             attempts=len(rows), successful=len(good), failures=len(rows)-len(good),
             f1=_mean(scores), f1_stddev=_std(scores),
             precision=_mean(r['score']['precision'] for r in good),
@@ -68,6 +79,9 @@ def aggregate_by_config(records):
     Missing repetitions are not imputed. Precision/recall use successes only;
     completeness continues to describe successful execution coverage.
     """
+    records = list(records)
+    if any(r.get('variant_id') is not None for r in records):
+        raise ValueError('Configuration headlines require original records; use robustness for variants')
     task_groups = defaultdict(list)
     raw_groups = defaultdict(list)
     for task in aggregate(records):

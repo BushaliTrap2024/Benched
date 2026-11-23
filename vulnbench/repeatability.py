@@ -7,6 +7,8 @@ from collections import Counter, defaultdict
 import posixpath
 from typing import Any
 
+from .storage import instance_key, reject_duplicates, source_identity
+
 
 def finding_signature(finding: dict, path_mode: str = 'basename') -> tuple:
     path = posixpath.normpath(str(finding.get('file', '')).replace('\\', '/'))
@@ -37,11 +39,15 @@ def _summarize(signatures: dict, repetitions: int) -> dict:
 def analyze(records: list[dict], path_mode: str = 'basename') -> list[dict]:
     if path_mode not in ('basename', 'relative-path'):
         raise ValueError('path_mode must be basename or relative-path')
+    if any(r.get('variant_id') is not None for r in records):
+        reject_duplicates(records)
     groups = defaultdict(list)
     for record in records:
-        groups[record['task_id'], record['config_id']].append(record)
+        groups[instance_key(record)].append(record)
     output = []
-    for (task, config), attempts in groups.items():
+    for (task, variant, config), attempts in groups.items():
+        prefix = (task, config) if variant is None else (task, config, variant)
+        identity = dict(fixture_id=attempts[0].get("fixture_id"), **source_identity(variant)) if variant is not None else {}
         rows = [r for r in attempts if not r.get('failure') and not r.get('error') and r.get('score') is not None]
         repetitions = [r['repetition'] for r in rows]
         if len(repetitions) != len(set(repetitions)):
@@ -62,14 +68,14 @@ def analyze(records: list[dict], path_mode: str = 'basename') -> list[dict]:
                 occurrence = dict(repetition=row['repetition'], finding_index=index,
                                   finding=finding, reference_id=reference_id)
                 # Scope task/config in the exported signature, not just the group.
-                signature = (task, config, *finding_signature(finding, path_mode))
+                signature = (*prefix, *finding_signature(finding, path_mode))
                 add('all_findings', signature, row['repetition'], occurrence)
                 add('reference_matched' if reference_id is not None else 'unmatched',
                     signature, row['repetition'], occurrence)
                 if reference_id is not None:
-                    add('reference_coverage', (task, config, reference_id), row['repetition'], occurrence)
+                    add('reference_coverage', (*prefix, reference_id), row['repetition'], occurrence)
         output.append(dict(
-            task_id=task, config_id=config, signature_path_mode=path_mode,
+            **identity, task_id=task, config_id=config, signature_path_mode=path_mode,
             successful_runs=len(rows), requested_repetitions=requested,
             failed_attempts=len(attempts)-len(rows),
             complete=set(repetitions) == set(range(1, requested + 1)),
