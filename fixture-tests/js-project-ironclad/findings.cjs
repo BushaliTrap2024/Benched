@@ -12,6 +12,42 @@ function source(file) {
   });
 }
 
+function constantString(node) {
+  if (node?.type === 'Literal' && typeof node.value === 'string') {
+    return node.value;
+  }
+  if (node?.type === 'BinaryExpression' && node.operator === '+') {
+    const left = constantString(node.left);
+    const right = constantString(node.right);
+    if (left !== undefined && right !== undefined) return left + right;
+  }
+}
+
+function transparentBlock(statement) {
+  if (statement.type === 'IfStatement' && statement.test.type === 'Literal' &&
+      statement.test.value === true && statement.consequent.type === 'BlockStatement') {
+    return statement.consequent.body;
+  }
+  if (statement.type === 'TryStatement' && !statement.finalizer) {
+    const handler = statement.handler;
+    const [only, ...rest] = handler?.body.body ?? [];
+    if (handler?.param?.type === 'Identifier' && rest.length === 0 &&
+        only?.type === 'ThrowStatement' && only.argument.type === 'Identifier' &&
+        only.argument.name === handler.param.name) {
+      return statement.block.body;
+    }
+  }
+}
+
+function findStatement(body, predicate) {
+  for (const statement of body) {
+    if (predicate(statement)) return { statement, scope: body };
+    const nested = transparentBlock(statement);
+    const match = nested && findStatement(nested, predicate);
+    if (match) return match;
+  }
+}
+
 function property(object, name) {
   return object?.properties?.find(({ key }) =>
     key?.name === name || key?.value === name)?.value;
@@ -31,11 +67,11 @@ test('Knex configuration contains a password literal [js-hardcoded-creds-3]', ()
   const config = body.flatMap(statement => statement.declarations ?? [])
     .map(declaration => declaration.init)
     .find(node => node?.callee?.callee?.name === 'require' &&
-      node.callee.arguments[0]?.value === 'knex')?.arguments[0];
+      constantString(node.callee.arguments[0]) === 'knex')?.arguments[0];
   const password = property(property(config, 'connection'), 'password');
   const value = password?.type === 'Identifier' ? binding(body, password.name) : password;
 
-  if (typeof value?.value !== 'string') {
+  if (constantString(value) === undefined) {
     inconclusive('No password string literal resolved in the supported Knex configuration.');
   }
 });
@@ -44,17 +80,19 @@ test('Lookup ID is interpolated into raw SQL [js-sql-injection-3]', () => {
   const route = source('app.js').body
     .map(statement => statement.expression)
     .find(node => node?.callee?.property?.name === 'get' &&
-      node.arguments[0]?.value === '/users');
+      constantString(node.arguments[0]) === '/users');
   const handler = route?.arguments[1];
   const request = handler?.params?.[0]?.name;
   const statements = handler?.body?.body ?? [];
-  const lookup = statements.find(statement => statement.type === 'ExpressionStatement')
-    ?.expression?.callee?.object?.callee?.object;
+  const match = findStatement(statements, statement => statement.type === 'ExpressionStatement');
+  const lookup = match?.statement.expression?.callee?.object?.callee?.object;
   const id = lookup?.arguments?.[1];
-  const input = id?.type === 'Identifier' ? binding(statements, id.name) : id;
+  const input = id?.type === 'Identifier'
+    ? binding(match.scope, id.name) ?? binding(statements, id.name)
+    : id;
   const helper = source('userMode.js').body.find(node =>
     node.type === 'FunctionDeclaration' && node.id.name === lookup?.callee?.name);
-  const query = helper?.body.body.find(node => node.type === 'ReturnStatement')?.argument;
+  const query = helper && findStatement(helper.body.body, node => node.type === 'ReturnStatement')?.statement.argument;
 
   if (!request || input?.object?.object?.name !== request ||
       input.object.property?.name !== 'query' || input.property?.name !== 'id' ||
